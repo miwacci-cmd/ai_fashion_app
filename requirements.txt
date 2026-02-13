@@ -1,0 +1,8 @@
+streamlit
+streamlit-authenticator
+stability-sdk
+pillow
+python-dotenv
+langchain-openai
+openai
+pyyaml
