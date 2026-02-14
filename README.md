@@ -23,7 +23,7 @@
 1. **リポジトリのクローン**
 ```bash
 git clone https://github.com/miwacci/ai_fashion_app.git
-cd ai-fashion-stylist-pro
+cd ai-fashion-app
 
 ```
 
