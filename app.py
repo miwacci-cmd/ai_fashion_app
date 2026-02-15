@@ -1,116 +1,201 @@
 import os
-import re
-import io
+import json
+import requests
 import streamlit as st
-from PIL import Image
 from dotenv import load_dotenv
-from stability_sdk import client as stability_client
+import replicate
 from langchain_openai import ChatOpenAI
 
 # --- 1. 環境設定 ---
 load_dotenv(override=True)
-OPENAI_KEY = os.getenv("OPENAI_API_KEY") 
-STABILITY_KEY = os.getenv("STABILITY_KEY")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+RAKUTEN_ID = os.getenv("RAKUTEN_APPLICATION_ID")
+REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
-# --- UI設定 ---
+if REPLICATE_TOKEN:
+    rep_client = replicate.Client(api_token=REPLICATE_TOKEN)
+
+USERS_FILE = "users.json"
+
+# --- 2. ユーザー＆クローゼット管理 ---
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: return {}
+    return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+def get_closet_path(username):
+    return f"closet_{username}.json"
+
+def load_closet(username):
+    path = get_closet_path(username)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: return []
+    return []
+
+def save_closet(username, data):
+    path = get_closet_path(username)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+# --- 3. 認証ゲート ---
+if not st.session_state.authenticated:
+    st.markdown('<div style="text-align:center; padding:50px 0;"><h1>👗 AI Fashion Stylist Pro</h1></div>', unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["ログイン", "新規登録"])
+    with tab1:
+        u_login = st.text_input("ユーザー名", key="l_u")
+        p_login = st.text_input("パスワード", type="password", key="l_p")
+        if st.button("ログイン", use_container_width=True, type="primary"):
+            users = load_users()
+            if u_login in users and users[u_login] == p_login:
+                st.session_state.authenticated = True
+                st.session_state.username = u_login
+                st.rerun()
+            else: st.error("認証失敗")
+    with tab2:
+        u_reg = st.text_input("希望ユーザー名", key="r_u")
+        p_reg = st.text_input("希望パスワード", type="password", key="r_p")
+        if st.button("作成", use_container_width=True):
+            users = load_users(); users[u_reg] = p_reg; save_users(users); st.success("完了")
+    st.stop()
+
+# --- 4. メイン機能 ---
+if "my_closet" not in st.session_state:
+    st.session_state.my_closet = load_closet(st.session_state.username)
+
+def search_rakuten_final(rakuten_query):
+    if not RAKUTEN_ID: return []
+    url = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706"
+    params = {"applicationId": RAKUTEN_ID, "keyword": rakuten_query, "format": "json", "hits": 3}
+    try:
+        res = requests.get(url, params=params, timeout=5)
+        return res.json().get("Items", [])
+    except: return []
+
 st.set_page_config(page_title="AI Fashion Stylist Pro", layout="wide")
-if 'auth_status' not in st.session_state: st.session_state['auth_status'] = True 
 
-if OPENAI_KEY:
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, openai_api_key=OPENAI_KEY)
-if STABILITY_KEY:
-    stability_api = stability_client.StabilityInference(key=STABILITY_KEY, engine="stable-diffusion-xl-1024-v1-0")
+h1, h2 = st.columns([8, 1.5])
+with h1:
+    st.markdown(f'<div style="background-color:#FFF9C4; border-radius:15px; padding:10px 20px;"><h1>AI Fashion Stylist Pro <small style="font-size:0.5em;">User: {st.session_state.username}</small></h1></div>', unsafe_allow_html=True)
+with h2:
+    if st.button("ログアウト", use_container_width=True):
+        st.session_state.authenticated = False; st.rerun()
 
-# --- ヘッダー ---
-st.markdown("""
-    <style>
-    .title-box { background-color: #FFF9C4; border-radius: 15px; padding: 20px; margin-bottom: 20px; }
-    h1 { color: #333; margin: 0; }
-    </style>
-    <div class="title-box"><h1>AI Fashion Stylist Pro</h1></div>
-""", unsafe_allow_html=True)
+col1, col2, col3 = st.columns([1, 1.3, 1.7], gap="medium")
 
-if st.session_state['auth_status']:
-    if "my_closet" not in st.session_state:
-        st.session_state.my_closet = ["MONCLERの黒ダウン", "白のチノパン", "ベージュのパンプス"]
+with col1:
+    st.write("### 🔍 Style Settings")
+    gender = st.radio("性別", ["男性", "女性"], horizontal=True, index=1)
+    season = st.selectbox("季節", ["春", "夏", "秋", "冬"], index=1)
+    body = st.selectbox("体型", ["標準的", "痩せ型", "筋肉質", "小柄", "プラスサイズ"], index=0)
+    scene = st.selectbox("シーン", ["カジュアル", "デート", "仕事", "旅行"], index=2)
 
-    col1, col2, col3 = st.columns([1, 1.2, 1.5], gap="large")
+    st.write("👟 **My Closet**")
+    for idx, item in enumerate(st.session_state.my_closet):
+        ca, cb = st.columns([5, 1])
+        ca.write(f"・{item}")
+        if cb.button("×", key=f"del_{idx}"):
+            st.session_state.my_closet.pop(idx); save_closet(st.session_state.username, st.session_state.my_closet); st.rerun()
 
-    with col1:
-        st.write("### 🔍 Style Settings")
-        gender = st.radio("性別", ["男性", "女性"], horizontal=True, index=1)
-        season = st.selectbox("季節", ["春", "夏", "秋", "冬"], index=3)
-        body = st.selectbox("体型", ["標準的", "痩せ型", "筋肉質", "小柄", "プラスサイズ"], index=0)
-        scene = st.selectbox("シーン", ["カジュアル", "デート", "仕事", "旅行"], index=2)
+    st.text_input("アイテム追加", key="input_field", placeholder="例: PRADAのバッグ")
+    if st.button("クローゼットへ登録", use_container_width=True):
+        if st.session_state.input_field:
+            st.session_state.my_closet.append(st.session_state.input_field); save_closet(st.session_state.username, st.session_state.my_closet); st.rerun()
+
+    predict_btn = st.button("スタイリング実行", type="primary", use_container_width=True)
+
+if predict_btn:
+    with st.spinner("クローゼットの逸品を主役にスタイリング中..."):
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, openai_api_key=OPENAI_KEY)
         
-        st.write("👟 **手元アイテム**")
-        for idx, item in enumerate(st.session_state.my_closet):
-            c_a, c_b = st.columns([5, 1])
-            c_a.write(f"・{item}")
-            if c_b.button("×", key=f"del_{idx}"):
-                st.session_state.my_closet.pop(idx); st.rerun()
-        
-        new_item = st.text_input("アイテム追加")
-        if st.button("追加"):
-            if new_item: st.session_state.my_closet.append(new_item); st.rerun()
-        predict_btn = st.button("コーデを提案する", type="primary", use_container_width=True)
+        body_kw = {"プラスサイズ": "大きいサイズ", "小柄": "小さいサイズ", "痩せ型": "細身", "筋肉質": "ストレッチ"}.get(body, "")
+        gender_kw = "メンズ" if gender == "男性" else "レディース"
 
-    if predict_btn:
-        with st.spinner("黒ダウンと白パンツのコントラストを調整中..."):
-            prompt = f"""
-            プロのスタイリストとして提案してください。
+        # 💡 ここがあなたの指定した「落としてはいけない」核心部分です
+        advice_prompt = f"""
+        あなたはプロのパーソナルスタイリストです。{gender}/{body}体型の方へ、{season}の{scene}に合う装いを提案してください。
+        
+        【現在の手持ちアイテム（最優先で活用してください）】
+        {st.session_state.my_closet}
+
+        【スタイリングの鉄則】
+        1. 手持ちアイテムに具体的なブランド名（例：PRADA）がある場合、そのアイテムを主役、または重要なアクセントとして必ずコーディネートに組み込んでください。
+        2. 手持ちアイテムが{season}や{scene}に合わない場合のみ無視して良いですが、ブランド品はできる限り活かす方法を考えてください。
+        3. 全身黒、または全身白は禁止。必ずコントラストをつけること。
+        4. 「おすすめ」は、不足している具体的なアイテム名1つ。
+        5. 「楽天検索用キーワード」の作成ルール：
+           - 衣類（シャツ、ワンピ、パンツ、アウター等）の場合："{gender_kw} {body_kw} {season} [おすすめの具体的名称]"
+           - 小物（ハット、バッグ、靴、アクセ等）の場合："{gender_kw} [おすすめ of 具体的名称]"（体型・季節は不要）
+        6. 「画像用プロンプト」は、手持ちのブランド品とおすすめアイテムを組み合わせた全身の具体的描写を英語で。
+
+        形式：
+        解説：(日本語。どの手持ちをどう活かしたか記述)
+        おすすめ：(名詞1つ)
+        楽天検索用キーワード：(指示に従った具体的キーワード)
+        画像用プロンプト：(A full body photo of a ... wearing ...)
+        """
+        
+        res = llm.invoke([("user", advice_prompt)]).content
+        
+        try:
+            advice = res.split("解説：")[1].split("おすすめ：")[0].strip()
+            suggest = res.split("おすすめ：")[1].split("楽天検索用キーワード：")[0].strip()
+            rakuten_q = res.split("楽天検索用キーワード：")[1].split("画像用プロンプト：")[0].strip()
+            visual_desc_en = res.split("画像用プロンプト：")[1].strip()
+        except:
+            st.error("生成形式エラー。もう一度実行してください。")
+            st.stop()
+
+        with col2:
+            st.markdown('<h3 style="white-space: nowrap; font-size: 1.25rem;">💬 スタイリストの助言</h3>', unsafe_allow_html=True)
+            st.write(advice)
+            st.markdown("---")
+            st.write(f"🛒 **買い足し提案: {suggest}**")
             
-            【厳守ルール】
-            1. 上半身は必ず「黒のMONCLERダウンジャケット」です。白ではありません。
-            2. 下半身は必ず「白のパンツ」です。
-            3. シーンは「仕事」に適した、清潔感のあるオフィスカジュアルにしてください。
-            4. 性別は必ず【{gender}】。
+            items = search_rakuten_final(rakuten_q)
+            if items:
+                for it in items:
+                    i = it["Item"]
+                    rc1, rc2 = st.columns([1, 2])
+                    with rc1: st.image(i["mediumImageUrls"][0]["imageUrl"])
+                    with rc2: 
+                        st.caption(i["itemName"][:40] + "...")
+                        st.link_button("楽天で探す", i["itemUrl"], use_container_width=True)
+            else:
+                st.link_button("楽天で探す", f"https://search.rakuten.co.jp/search/mall/{rakuten_q}/", type="secondary", use_container_width=True)
+
+        with col3:
+            st.write("### 📸 完成イメージ (Full Body)")
+            body_en_shot = {"プラスサイズ": "plus-size curvy body"}.get(body, f"{body} body")
+            gender_en_shot = "woman" if gender == "女性" else "man"
             
-            属性: {gender}, {body}, {season}, {scene}
-            アイテムリスト: {st.session_state.my_closet}
-            
-            【出力形式】
-            解説：(日本語)
-            追加アイテム：(1つだけ)
-            プロンプト：(英語。Vertical full body shot, (Jet black matte MONCLER jacket:1.6), (Pure white chino trousers:1.5), (Nude beige pumps:1.5))
+            # 画像生成プロンプトに visual_desc_en を直結
+            flux_prompt = f"""
+            (Full body shot, head-to-toe:2.0). 
+            A high-end professional fashion editorial photo. 
+            {visual_desc_en}. 
+            Model is a {gender_en_shot} with {body_en_shot}.
+            Natural daylight, photorealistic, cinematic quality, matte textures.
             """
-            
+
             try:
-                res = llm.invoke([("user", prompt)]).content
-                advice_part = re.search(r"解説：(.*?)追加アイテム：", res, re.S).group(1).strip()
-                new_item_suggest = re.search(r"追加アイテム：(.*?)プロンプト：", res, re.S).group(1).strip()
-                p_out = res.split("プロンプト：")[1].strip()
-
-                with col2:
-                    st.write("### 💬 スタイリストの助言")
-                    st.write(advice_part)
-                    st.markdown("---")
-                    query = f"{gender}+{body}+{scene}+{new_item_suggest}"
-                    st.link_button(f"楽天で {new_item_suggest} を探す", f"https://search.rakuten.co.jp/search/mall/{query}/")
-
-                with col3:
-                    st.write("### 📸 完成イメージ")
-                    neg_gender = "male, man, boy, facial hair" if gender == "女性" else "female, woman, girl"
-                    
-                    answers = stability_api.generate(
-                        prompt=[
-                            stability_client.generation.Prompt(
-                                text=f"(Vertical full body shot:1.5), (Adult {gender} fashion model:1.6), (Jet black MONCLER down jacket:1.6), (Pure white trousers:1.6), (Beige high-heeled pumps:1.5), {p_out}", 
-                                parameters=stability_client.generation.PromptParameters(weight=1.5)
-                            ),
-                            stability_client.generation.Prompt(
-                                text=f"{neg_gender}, (white jacket:1.6), (white coat:1.6), (all-white:1.5), (sneakers:1.4), cropped legs, blurry", 
-                                parameters=stability_client.generation.PromptParameters(weight=-1.5)
-                            )
-                        ],
-                        width=832, height=1216, steps=30, cfg_scale=13.0
-                    )
-                    for resp in answers:
-                        for art in resp.artifacts:
-                            if art.type == stability_client.generation.ARTIFACT_IMAGE:
-                                st.image(Image.open(io.BytesIO(art.binary)), use_container_width=True)
+                output = rep_client.run("black-forest-labs/flux-1.1-pro", input={"prompt": flux_prompt, "aspect_ratio": "2:3"})
+                st.image(str(output), use_container_width=True)
             except Exception as e:
-                st.error(f"エラー: {e}")
+                st.error(f"画像生成エラー: {e}")
 
 st.markdown("---")
 st.caption("© 2026 AI Fashion Stylist Pro")
+st.markdown('<div style="font-size: 0.75rem; color: gray; border-top: 1px solid #eee; padding-top: 10px;">免責事項：ブランド名は提案用であり、公式な提携を示すものではありません。画像はAIイメージです。</div>', unsafe_allow_html=True)

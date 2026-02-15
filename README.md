@@ -1,71 +1,68 @@
-# AI Fashion Stylist Pro 👠❄️
+AI Fashion Stylist Pro 👗✨
+AI Fashion Stylist Pro は、個人のクローゼット、体型、季節、シーンを高度に分析し、パーソナライズされたスタイリング提案と、その内容を完璧に再現した全身イメージを生成する次世代のファッション・アプリケーションです。
 
-**AI Fashion Stylist Pro** は、手持ちのアイテムとシーン（TPO）に合わせて、プロフェッショナルなコーディネートを提案・可視化するStreamlitアプリケーションです。
+🌟 主な機能
+マルチユーザー・ログインシステム:
 
-## 🌟 主な機能
+ユーザーごとの新規登録・ログイン機能を搭載。
 
-* **インテリジェント・スタイリング**: GPT-4o-miniがあなたのクローゼットとシーン（仕事、デート等）を分析し、最適な助言を提供します。
-* **高精度イメージ生成**: Stability AI (SDXL) を活用し、提案されたコーデを9:16の縦長全身ショットで可視化します。
-* **ブランド・テクスチャ再現**: 特定のブランドアイテムの特徴をプロンプトエンジニアリングで忠実に再現。
-* **スマート・ショッピング**: 提案された新しいアイテムを、ワンクリックで楽天やAmazonから検索（属性付き検索）できます。
-* **TPOガード**: 「仕事」シーンでのダメージデニム排除など、マナーに配慮したフィルタリング機能を搭載。
+各ユーザー専用のクローゼット情報（closet_ユーザー名.json）を個別に管理し、データを永続化します。
 
-## 🛠 技術スタック
+インテリジェント・スタイリング:
 
-* **Frontend**: [Streamlit](https://streamlit.io/)
-* **LLM**: [OpenAI GPT-4o-mini](https://openai.com/) (LangChain)
-* **Image Gen**: [Stability AI SDXL 1.0](https://stability.ai/)
-* **Authentication**: `streamlit-authenticator`
-* **Environment**: Python 3.11+ / `python-dotenv`
+重複排除ロジック: クローゼット内のアイテムを分析し、既所有カテゴリの提案を回避。
 
-## 🚀 セットアップ
+シーン・季節の適応: シーンや季節に合わない手持ちアイテムはあえて無視し、最高の一着を新規提案する柔軟なロジックを搭載。
 
-1. **リポジトリのクローン**
-```bash
-git clone https://github.com/miwacci/ai_fashion_app.git
-cd ai_fashion_app
+脱モノトーン: 全身白、または全身黒のコーディネートを禁止し、必ずコントラストのある着こなしを生成。
 
-```
+FLUX.1-pro による「完全同期」イメージ生成:
 
+スタイリストの助言（色・素材・形）と、生成される画像の内容を100%一致させる「プロンプト同期システム」を採用。
 
-2. **仮想環境の作成とライブラリのインストール**
-```bash
-python -m venv venv
-source venv/bin/activate  # Windowsの場合: venv\Scripts\activate
+頭からつま先まで入る全身ショット（Head-to-toe）を物理的に固定し、リアルな質感を再現。
+
+「衣類・小物」判別型 楽天API検索:
+
+アイテムが衣類（シャツ・パンツ等）か小物（靴・鞄等）かをAIが自動判別。
+
+衣類の場合は「性別・体型キーワード・季節」を、小物の場合は「性別」のみを検索クエリに自動付与し、お買い物体験の精度を向上。
+![男性](image.png)
+![女性](image-2.png)
+
+🚀 セットアップ
+1. 動作環境
+Python 3.9以上
+
+Streamlit
+
+2. 環境変数の設定
+プロジェクトのルートディレクトリに .env ファイルを作成し、以下の情報を入力してください。
+※ .env ファイルはセキュリティのため、絶対にGitHubに公開しないでください。
+
+コード スニペット
+OPENAI_API_KEY=your_openai_api_key
+REPLICATE_API_TOKEN=your_replicate_token
+RAKUTEN_APPLICATION_ID=your_rakuten_app_id
+3. インストールと実行
+Bash
+# 必要ライブラリのインストール
 pip install -r requirements.txt
 
-```
-
-
-3. **環境変数の設定**
-プロジェクトルートに `.env` ファイルを作成し、各APIキーを記述してください。
-```env
-OPENAI_API_KEY=sk-proj-xxxxxxxxxxxx
-STABILITY_KEY=xxxxxxxxxxxx
-
-```
-
-
-4. **アプリの起動**
-```bash
+# アプリケーションの起動
 streamlit run app.py
+📂 ディレクトリ構造
+app.py: メインアプリケーション
 
-```
+users.json: ユーザー認証データ
 
+closet_username.json: ユーザー別クローゼットデータ（自動生成）
 
+requirements.txt: 必要ライブラリ一覧
 
-## 📸 スクリーンショット例
+.env: 環境変数（各自作成）
 
-> **Scenario**: 冬の「仕事」シーン ❄️👔
-> **Items**: MXXXXXの黒ダウン × 白のチノパン × ベージュのパンプス
-> AIが「黒ダウンの重厚感」と「白パンツの清潔感」を両立させ、ビジネスに相応しいマットな質感で描画します。
-![screen shot1](image-1.png)
-※画像は加工しています
----
+⚖️ 免責事項
+当アプリケーションで表示されるブランド名、製品名、およびロゴは、各権利所有者の商標または登録商標です。本アプリでの使用は識別およびスタイリング提案のみを目的としており、各ブランドとの公式な提携、推奨、または承認を示すものではありません。生成される画像はAIによるイメージであり、実際の製品と完全に一致することを保証するものではありません。
 
-## 📄 ライセンス
-
-Copyright © 2026 AI Fashion Stylist Pro.
-This project is for educational and portfolio purposes.
-
----
+© 2026 AI Fashion Stylist Pro | Developed by miwacci
