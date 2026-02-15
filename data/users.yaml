@@ -1,6 +1,10 @@
-user:
-  body: 標準
-  gender: 女性
-  items: []
-  scene: 仕事
-  season: 春
+users:
+  miwacci:
+    body: ぽっちゃり
+    closet:
+    - Nike Airmax
+    - ダメージデニム
+    gender: 女性
+    items:
+    - Nike Airmax
+    password: '12345'
