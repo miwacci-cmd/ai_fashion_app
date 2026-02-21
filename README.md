@@ -1,3 +1,5 @@
+⚠️ これはテスト環境です。修正はここで実験してからmainへ！
+
 # 👗 AI Fashion Stylist Pro
 
 **あなたのクローゼットに眠る逸品を、AIが最高のコーディネートへ昇華させる。**
@@ -109,4 +111,4 @@ streamlit run app.py
 
 当アプリケーションで表示されるブランド名、製品名、およびロゴは、各権利所有者の商標または登録商標です。本アプリでの使用は識別およびスタイリング提案のみを目的としており、ブランドとの公式な提携を示すものではありません。生成される画像はAIイメージであり、実際の製品と完全に一致することを保証するものではありません。
 
-© 2026 AI Fashion Stylist Pro | Developed by **miwacci**
+© 2026 AI Fashion Stylist Pro | Developed by miwacci
