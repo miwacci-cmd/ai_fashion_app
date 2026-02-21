@@ -5,9 +5,11 @@ import streamlit as st
 from dotenv import load_dotenv
 import replicate
 from langchain_openai import ChatOpenAI
+import re
+import urllib.parse
 
 # ==========================================
-# 1. ページ設定 (最優先)
+# 1. ページ設定
 # ==========================================
 st.set_page_config(page_title="AI Fashion Stylist Pro", layout="wide")
 
@@ -16,11 +18,10 @@ st.set_page_config(page_title="AI Fashion Stylist Pro", layout="wide")
 # ==========================================
 load_dotenv(override=True)
 
-# APIキーの取得
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
-# 楽天IDの設定 (Secretsから読み込み)
+# Secretsから読み込み
 RAKUTEN_APP_ID = st.secrets["RAKUTEN_APPLICATION_ID"]
 RAKUTEN_AFFILIATE_ID = st.secrets["RAKUTEN_AFFILIATE_ID"]
 
@@ -62,24 +63,41 @@ def save_closet(username, data):
 def search_rakuten_final(rakuten_query):
     """楽天で商品を検索し、アフィリエイトURLを含むデータを返す"""
     if not RAKUTEN_APP_ID: return []
+    
+    # キーワード洗浄（カッコやノイズを除去）
+    clean_q = re.sub(r'[\[\]「」『』【】]', '', rakuten_query)
+    clean_q = clean_q.replace("おすすめ：", "").replace("楽天検索用キーワード：", "").strip()
+    
     url = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706"
     params = {
         "applicationId": RAKUTEN_APP_ID,
         "affiliateId": RAKUTEN_AFFILIATE_ID,
-        "keyword": rakuten_query,
+        "keyword": clean_q,
         "format": "json",
         "hits": 3
     }
     try:
         res = requests.get(url, params=params, timeout=5)
         res.raise_for_status()
-        return res.json().get("Items", [])
+        data = res.json()
+        return data.get("Items", [])
     except:
         return []
 
-def display_rakuten_cards(items):
+def display_rakuten_cards(items, fallback_q):
     """取得したアイテムをオシャレな横並びカードで表示する"""
+    # 検索キーワードをURL用にエンコード
+    clean_fallback = re.sub(r'[\[\]「」『』【】]', '', fallback_q).strip()
+    encoded_q = urllib.parse.quote(clean_fallback)
+    
+    # 楽天アフィリエイトの検索結果直リンク（ディープリンク）を作成
+    # これにより、トップページではなく「その商品の検索結果」へ直接飛び、かつ報酬が発生します
+    affiliate_search_url = f"https://hb.afl.rakuten.co.jp/hgc/{RAKUTEN_AFFILIATE_ID}/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F{encoded_q}%2F"
+
     if not items or len(items) == 0:
+        st.write("---")
+        st.write("### 🛍️ おすすめのアイテム")
+        st.link_button("楽天でコーディネート商品をチェック", affiliate_search_url, use_container_width=True)
         return 
 
     st.write("---")
@@ -88,14 +106,18 @@ def display_rakuten_cards(items):
 
     for i, item in enumerate(items):
         info = item['Item']
+        # 個別商品のアフィリエイトURL。取得できなければ検索結果URLへ。
+        aff_link = info.get('affiliateUrl') if info.get('affiliateUrl') else affiliate_search_url
+        
         with cols[i]:
             with st.container(border=True):
                 if info.get('mediumImageUrls'):
                     st.image(info['mediumImageUrls'][0]['imageUrl'], use_container_width=True)
+                
                 name = info['itemName'][:35] + "..." if len(info['itemName']) > 35 else info['itemName']
                 st.markdown(f"**{name}**")
                 st.markdown(f"#### :red[¥{info['itemPrice']:,}]")
-                st.link_button("楽天でチェック", info['affiliateUrl'], use_container_width=True)
+                st.link_button("商品をチェック", aff_link, use_container_width=True)
 
 # ==========================================
 # 4. 認証ゲート
@@ -146,16 +168,21 @@ with col1:
     scene = st.selectbox("シーン", ["カジュアル", "デート", "仕事", "旅行"], index=2)
 
     st.write("👟 **My Closet**")
+    
+    # アイテム登録（フォームを使用して入力を自動クリア）
+    with st.form("add_item_form", clear_on_submit=True):
+        input_item = st.text_input("アイテム追加", placeholder="例: PRADAのバッグ")
+        if st.form_submit_button("クローゼットへ登録", use_container_width=True):
+            if input_item:
+                st.session_state.my_closet.append(input_item)
+                save_closet(st.session_state.username, st.session_state.my_closet)
+                st.rerun()
+
     for idx, item in enumerate(st.session_state.my_closet):
         ca, cb = st.columns([5, 1])
         ca.write(f"・{item}")
         if cb.button("×", key=f"del_{idx}"):
             st.session_state.my_closet.pop(idx); save_closet(st.session_state.username, st.session_state.my_closet); st.rerun()
-
-    st.text_input("アイテム追加", key="input_field", placeholder="例: PRADAのバッグ")
-    if st.button("クローゼットへ登録", use_container_width=True):
-        if st.session_state.input_field:
-            st.session_state.my_closet.append(st.session_state.input_field); save_closet(st.session_state.username, st.session_state.my_closet); st.rerun()
 
     predict_btn = st.button("スタイリング実行", type="primary", use_container_width=True)
 
@@ -166,7 +193,7 @@ if predict_btn:
         body_kw = {"プラスサイズ": "大きいサイズ", "小柄": "小さいサイズ", "痩せ型": "細身", "筋肉質": "ストレッチ"}.get(body, "")
         gender_kw = "メンズ" if gender == "男性" else "レディース"
 
-        # 核心的なプロンプト
+        # 【核心的なプロンプト：維持】
         advice_prompt = f"""
         あなたはプロのパーソナルスタイリストです。{gender}/{body}体型の方へ、{season}の{scene}に合う装いを提案してください。
         
@@ -198,31 +225,29 @@ if predict_btn:
             rakuten_q = res.split("楽天検索用キーワード：")[1].split("画像用プロンプト：")[0].strip()
             visual_desc_en = res.split("画像用プロンプト：")[1].strip()
         except:
-            st.error("生成形式エラー。もう一度実行してください。")
+            st.error("生成形式エラー。再試行してください。")
             st.stop()
 
         with col2:
             st.markdown('<h3 style="white-space: nowrap; font-size: 1.25rem;">💬 スタイリストの助言</h3>', unsafe_allow_html=True)
             st.write(advice)
             
-            # 楽天検索と表示
+            # 楽天検索と表示（検索ワードを渡してフォールバックに対応）
             items = search_rakuten_final(rakuten_q)
-            if items:
-                display_rakuten_cards(items)
-            else:
-                st.write(f"🛒 **買い足し提案: {suggest}**")
-                st.link_button("楽天で手動検索", f"https://search.rakuten.co.jp/search/mall/{rakuten_q}/", use_container_width=True)
+            display_rakuten_cards(items, rakuten_q)
 
         with col3:
-            st.write("### 📸 完成イメージ (Full Body)")
+            st.write("### 📸 完成イメージ")
             body_en_shot = {"プラスサイズ": "plus-size curvy body"}.get(body, f"{body} body")
             gender_en_shot = "woman" if gender == "女性" else "man"
             
+            # 【安全プロンプト：維持】
             flux_prompt = f"""
             (Full body shot, head-to-toe:2.0). 
             A high-end professional fashion editorial photo. 
             {visual_desc_en}. 
             Model is a {gender_en_shot} with {body_en_shot}.
+            Modest clothing, elegant style, conservative neckline, non-sexualized pose, no cleavage, high-fashion modesty.
             Natural daylight, photorealistic, cinematic quality, matte textures.
             """
 
