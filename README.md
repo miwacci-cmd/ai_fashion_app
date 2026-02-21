@@ -1,3 +1,5 @@
+⚠️ これはテスト環境です。修正はここで実験してからmainへ！
+
 # 👗 AI Fashion Stylist Pro
 ![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?logo=streamlit)
